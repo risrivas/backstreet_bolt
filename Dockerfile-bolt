@@ -1,0 +1,16 @@
+FROM python:3.8-slim-buster
+
+# set the virtual env 
+ENV VIRTUAL_ENV=/tmp/venv
+RUN python -m venv /tmp/venv
+ENV PATH="$VIRTUAL_ENV/bin:$PATH"
+
+# install modules
+ADD requirements_bolt.txt /tmp/venv/requirements.txt
+RUN python -m pip install --upgrade -r /tmp/venv/requirements.txt
+
+ADD backstreet/use_backtest_bolt /home/backstreet/use_backtest_bolt
+WORKDIR /home/backstreet/use_backtest_bolt
+
+CMD [ "jupyter", "notebook" , "--ip", "0.0.0.0", "--no-browser", "--allow-root"]
+

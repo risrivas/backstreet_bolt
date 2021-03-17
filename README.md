@@ -20,6 +20,6 @@
 * Stop the docker container : ./scripts/stop_bolt.sh
 
 ### Ingest the custom bundle
-* Prepare the daily or minutely ticker OHCLV data file as a [feather file](https://towardsdatascience.com/the-best-format-to-save-pandas-data-414dca023e0d) and store it in AWS S3 - it can hold big data
+* Prepare the daily or minutely ticker OHCLV data file as a [binary feather file](https://pandas.pydata.org/pandas-docs/stable/reference/api/pandas.DataFrame.to_feather.html) and store it in AWS S3 - it can hold big data
 * Framework will automatically fetch the stock data from AWS S3 where it is stored as binary feather file format while running the backtesting strategies
 

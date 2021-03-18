@@ -5,6 +5,10 @@ ENV VIRTUAL_ENV=/tmp/venv
 RUN python -m venv /tmp/venv
 ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 
+# install vi editor
+RUN apt-get update \
+    && apt-get install -y vim
+
 # install modules
 ADD requirements_bolt.txt /tmp/venv/requirements.txt
 RUN python -m pip install --upgrade -r /tmp/venv/requirements.txt

@@ -1,5 +1,7 @@
 import pandas as pd
 import numpy as np
+import io
+import boto3
 import matplotlib.pyplot as plt
 plt.style.use("seaborn")
 
@@ -8,6 +10,8 @@ pd.options.mode.chained_assignment = None
 import yfinance as yf
 
 from datetime import datetime, timedelta
+from pyarrow.feather import write_feather
+from botocore.exceptions import ClientError
 
 import os
 os.chdir("/home/backstreet/use_backtest_bolt")
@@ -27,8 +31,6 @@ class BacktestBoltBase():
         initial amount to be invested per trade
     tc: float (default = 0) 
         transaction costs in bips (0.0001)
-    use_feather: boolean (default = True) 
-        whether to use feather format to load pricing data
 
     Methods
     =======
@@ -65,21 +67,40 @@ class BacktestBoltBase():
         self.use_feather = use_feather
         self.get_data()
 
+    def write_feather_to_s3(self, s3_url, df):
+        assert s3_url.startswith("s3://")
+        bucket_name, key_name = s3_url[5:].split("/", 1)
+        s3_resource = boto3.resource('s3', aws_access_key_id='AKIAVTMOLD5RH2X4JCJS', aws_secret_access_key='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')
+        with io.BytesIO() as f:
+            write_feather(df, f)
+            s3_resource.Object(bucket_name=bucket_name, key=key_name).put(Body=f.getvalue())
+
+    def read_feather_from_s3(self, s3_url):
+        assert s3_url.startswith("s3://")
+        bucket_name, key_name = s3_url[5:].split("/", 1)
+        s3_resource = boto3.resource('s3', aws_access_key_id='AKIAVTMOLD5RH2X4JCJS', aws_secret_access_key='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')
+        fthr_obj = s3_resource.Object(bucket_name=bucket_name, key=key_name)
+        try:
+            buff = io.BytesIO(fthr_obj.get()['Body'].read())
+        except ClientError:
+            ftr_data = yf.download(self.symbol, start=(datetime.now() - timedelta(days=10 * 365)), end=datetime.today())["Adj Close"].to_frame().dropna().reset_index()
+            buff = f'data/feathers/daily/{self.symbol}.feather'
+            ftr_data.to_feather(buff)
+            self.write_feather_to_s3(s3_url, pd.read_feather(buff))
+        finally:
+            return pd.read_feather(buff)
+        
     def get_data(self):
         ''' Retrieves and prepares the data.
         '''
-        if self.use_feather:
-            if not os.path.isfile(f'data/feathers/daily/{self.symbol}.feather'):
-                ftr_data = yf.download(self.symbol, start=(datetime.now() - timedelta(days=10 * 365)), end=datetime.today())["Adj Close"].to_frame().dropna().reset_index()
-                ftr_data.to_feather(f'data/feathers/daily/{self.symbol}.feather')
-            raw = pd.read_feather(f'data/feathers/daily/{self.symbol}.feather')
-            raw["Date"] = pd.to_datetime(raw["Date"])
-            raw.set_index("Date", inplace=True)
-        else:
-            if not os.path.isfile(f'data/csvs/daily/{self.symbol}.csv'):
-                csv_data = yf.download(self.symbol, start=(datetime.now() - timedelta(days=10 * 365)), end=datetime.today())["Adj Close"]
-                csv_data.to_csv(f'data/csvs/daily/{self.symbol}.csv')
-            raw = pd.read_csv(f'data/csvs/daily/{self.symbol}.csv')
+        s3_url = f's3://bbfirstdata/individual/Data/{self.symbol}.feather'
+        raw = self.read_feather_from_s3(s3_url)
+        
+        if os.path.isfile(f'data/feathers/daily/{self.symbol}.feather'):
+            os.remove(f'data/feathers/daily/{self.symbol}.feather')
+        
+        raw["Date"] = pd.to_datetime(raw["Date"])
+        raw.set_index("Date", inplace=True)
         raw = raw["Adj Close"].to_frame().dropna()
         raw = raw.loc[self.start:self.end].copy()
         raw.rename(columns={"Adj Close" : "price"}, inplace=True)
@@ -101,7 +122,7 @@ class BacktestBoltBase():
         if title is None:
             title = self.symbol
         self.data[cols].plot(figsize = (12, 8), title = title)
-        # plt.show()
+        plt.show()
     
     def get_values(self, bar):
         ''' Returns the date, the price and the spread for the given bar.
